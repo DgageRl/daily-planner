@@ -1,0 +1,445 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+const API_URL = 'http://localhost:3000';
+
+type Note = {
+  id: string;
+  title: string;
+  content: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export default function HomeScreen() {
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const loadNotes = useCallback(async () => {
+    try {
+      setError('');
+      const response = await fetch(`${API_URL}/notes`);
+      if (!response.ok) throw new Error('Не удалось загрузить заметки');
+      setNotes(await response.json());
+    } catch {
+      setError('Не удалось подключиться к API. Проверь сервер на порту 3000.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
+  async function saveNote() {
+    if (!title.trim()) {
+      setError('Введите заголовок заметки.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+
+    try {
+      const response = await fetch(
+        editingId ? `${API_URL}/notes/${editingId}` : `${API_URL}/notes`,
+        {
+          method: editingId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim(),
+          }),
+        },
+      );
+
+      if (!response.ok) throw new Error('Не удалось сохранить заметку');
+
+      setTitle('');
+      setContent('');
+      setEditingId(null);
+      await loadNotes();
+    } catch {
+      setError('Не удалось сохранить заметку. Проверь соединение с API.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function editNote(note: Note) {
+    setEditingId(note.id);
+    setTitle(note.title);
+    setContent(note.content);
+  }
+
+  async function togglePinned(note: Note) {
+    try {
+      const response = await fetch(`${API_URL}/notes/${note.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned: !note.pinned }),
+      });
+      if (!response.ok) throw new Error();
+      await loadNotes();
+    } catch {
+      setError('Не удалось изменить закрепление заметки.');
+    }
+  }
+
+  async function deleteNote(id: string) {
+    try {
+      const response = await fetch(`${API_URL}/notes/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error();
+      if (editingId === id) {
+        setEditingId(null);
+        setTitle('');
+        setContent('');
+      }
+      await loadNotes();
+    } catch {
+      setError('Не удалось удалить заметку.');
+    }
+  }
+
+  const filteredNotes = notes
+    .filter((note) =>
+      `${note.title} ${note.content}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+    )
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned));
+
+
+  return (
+    <View style={styles.app}>
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.main}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.eyebrow}>ЛИЧНОЕ ПРОСТРАНСТВО</Text>
+        <Text style={styles.heading}>Мои заметки</Text>
+        <Text style={styles.subtitle}>
+          Все ваши мысли и планы — в одном месте.
+        </Text>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <View style={styles.editor}>
+          <Text style={styles.editorTitle}>
+            {editingId ? 'Редактировать заметку' : 'Новая заметка'}
+          </Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Название заметки"
+            placeholderTextColor="#8A8D98"
+            style={styles.titleInput}
+          />
+          <TextInput
+            value={content}
+            onChangeText={setContent}
+            placeholder="Запишите свою мысль..."
+            placeholderTextColor="#8A8D98"
+            multiline
+            style={styles.contentInput}
+          />
+          <View style={styles.editorActions}>
+            {editingId ? (
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={() => {
+                  setEditingId(null);
+                  setTitle('');
+                  setContent('');
+                }}
+              >
+                <Text style={styles.secondaryButtonText}>Отмена</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={[styles.primaryButton, saving && styles.disabled]}
+              disabled={saving}
+              onPress={saveNote}
+            >
+              <Text style={styles.primaryButtonText}>
+                {saving ? 'Сохраняем…' : editingId ? 'Сохранить' : '+ Добавить заметку'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.listHeader}>
+          <Text style={styles.sectionTitle}>Все записи</Text>
+          <Text style={styles.count}>{notes.length} заметок</Text>
+        </View>
+
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="⌕  Поиск по заметкам"
+          placeholderTextColor="#8A8D98"
+          style={styles.search}
+        />
+
+        {loading ? (
+          <ActivityIndicator size="large" color="#635BFF" />
+        ) : filteredNotes.length === 0 ? (
+          <Text style={styles.empty}>
+            Заметок пока нет. Создайте первую запись выше.
+          </Text>
+        ) : (
+          <View style={styles.notesGrid}>
+            {filteredNotes.map((note) => (
+              <View key={note.id} style={styles.noteCard}>
+                <View style={styles.noteTop}>
+                  <Text style={styles.noteDate}>
+                    {new Date(note.updatedAt).toLocaleDateString('ru-RU')}
+                  </Text>
+                  <Pressable onPress={() => togglePinned(note)}>
+                    <Text style={styles.pin}>
+                      {note.pinned ? '📌 Закреплена' : 'Закрепить'}
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.noteTitle}>{note.title}</Text>
+                <Text style={styles.noteContent} numberOfLines={5}>
+                  {note.content || 'Нет дополнительного текста'}
+                </Text>
+                <View style={styles.noteActions}>
+                  <Pressable onPress={() => editNote(note)}>
+                    <Text style={styles.actionText}>Редактировать</Text>
+                  </Pressable>
+                  <Pressable onPress={() => deleteNote(note.id)}>
+                    <Text style={styles.deleteText}>Удалить</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  app: {
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: '#F7F7FB',
+    minHeight: '100%',
+  },
+  mainScroll: {
+    flex: 1,
+  },
+  main: {
+    width: '100%',
+    maxWidth: 1040,
+    alignSelf: 'center',
+    padding: 32,
+    paddingBottom: 60,
+  },
+  eyebrow: {
+    color: '#7770F5',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+  heading: {
+    color: '#25243A',
+    fontSize: 34,
+    fontWeight: '800',
+  },
+  subtitle: {
+    color: '#828393',
+    fontSize: 15,
+    marginTop: 8,
+    marginBottom: 28,
+  },
+  error: {
+    color: '#B42318',
+    backgroundColor: '#FEECEB',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  editor: {
+    backgroundColor: '#FFFFFF',
+    padding: 22,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EBEAF3',
+    marginBottom: 32,
+  },
+  editorTitle: {
+    color: '#29283D',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  titleInput: {
+    color: '#29283D',
+    borderWidth: 1,
+    borderColor: '#E6E5EE',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+    fontSize: 15,
+  },
+  contentInput: {
+    color: '#29283D',
+    borderWidth: 1,
+    borderColor: '#E6E5EE',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    fontSize: 15,
+  },
+  editorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 14,
+    flexWrap: 'wrap',
+  },
+  primaryButton: {
+    backgroundColor: '#635BFF',
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: '#D8D7E4',
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  secondaryButtonText: {
+    color: '#4B4A60',
+    fontWeight: '600',
+  },
+  disabled: {
+    opacity: 0.6,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    color: '#29283D',
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  count: {
+    color: '#777989',
+    fontSize: 13,
+  },
+  search: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8E7F0',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    marginBottom: 18,
+    fontSize: 15,
+    color: '#29283D',
+  },
+  notesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  noteCard: {
+    flexBasis: 280,
+    flexGrow: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EBEAF3',
+    borderRadius: 16,
+    padding: 18,
+  },
+  noteTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 16,
+  },
+  noteDate: {
+    color: '#9698A5',
+    fontSize: 12,
+  },
+  pin: {
+    color: '#635BFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  noteTitle: {
+    color: '#29283D',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  noteContent: {
+    color: '#737486',
+    fontSize: 14,
+    lineHeight: 21,
+    minHeight: 42,
+  },
+  noteActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#F0EFF5',
+    marginTop: 18,
+    paddingTop: 14,
+  },
+  actionText: {
+    color: '#635BFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  deleteText: {
+    color: '#C24141',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  empty: {
+    color: '#777989',
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    borderRadius: 14,
+    textAlign: 'center',
+  },
+});

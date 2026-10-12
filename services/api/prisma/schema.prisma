@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   @default("")
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String    @default("")
+  completed   Boolean   @default(false)
+  priority    String    @default("medium")
+  dueAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Reminder {
+  id        String    @id @default(uuid())
+  title     String
+  message   String    @default("")
+  remindAt  DateTime
+  isSent    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+}

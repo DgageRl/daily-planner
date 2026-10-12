@@ -1,0 +1,67 @@
+import { Tabs } from 'expo-router';
+import { Platform } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+
+export default function TabsLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#6B5CE7',
+        tabBarInactiveTintColor: '#9293A7',
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '700',
+          marginTop: 2,
+        },
+        tabBarStyle: {
+          backgroundColor: '#FFFFFF',
+          borderTopColor: '#E9EAF3',
+          borderTopWidth: 1,
+          height: Platform.OS === 'ios' ? 84 : 66,
+          paddingTop: 8,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+          elevation: 0,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Заметки',
+          tabBarLabel: 'Заметки',
+          tabBarIcon: ({ color, focused }) => (
+            <SymbolView
+              name={focused ? 'note.text' : 'note.text'}
+              tintColor={color}
+              size={23}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="tasks"
+        options={{
+          title: 'Задачи',
+          tabBarLabel: 'Задачи',
+          tabBarIcon: ({ color, focused }) => (
+            <SymbolView
+              name={focused ? 'checklist' : 'checklist'}
+              tintColor={color}
+              size={23}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          href: null,
+        }}
+      />
+    </Tabs>
+  );
+}

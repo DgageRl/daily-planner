@@ -1,0 +1,491 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+const API_URL = 'http://localhost:3000';
+
+type Task = {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+  priority: 'low' | 'medium' | 'high';
+  dueAt: string | null;
+};
+
+export default function TasksScreen() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<Task['priority']>('medium');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadTasks = useCallback(async () => {
+    try {
+      setError('');
+      const response = await fetch(`${API_URL}/tasks`);
+      if (!response.ok) throw new Error();
+      setTasks(await response.json());
+    } catch {
+      setError('Не удалось загрузить задачи. Проверь API на порту 3000.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  async function addTask() {
+    if (!title.trim()) {
+      setError('Введите название задачи.');
+      return;
+    }
+
+    try {
+      setError('');
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          priority,
+        }),
+      });
+      if (!response.ok) throw new Error();
+
+      setTitle('');
+      setDescription('');
+      setPriority('medium');
+      await loadTasks();
+    } catch {
+      setError('Не удалось сохранить задачу.');
+    }
+  }
+
+  async function toggleTask(task: Task) {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !task.completed }),
+      });
+      if (!response.ok) throw new Error();
+      await loadTasks();
+    } catch {
+      setError('Не удалось изменить статус задачи.');
+    }
+  }
+
+  async function deleteTask(id: string) {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error();
+      await loadTasks();
+    } catch {
+      setError('Не удалось удалить задачу.');
+    }
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.page}>
+      <Text style={styles.eyebrow}>МОЁ ПРОСТРАНСТВО</Text>
+      <Text style={styles.heading}>Мои задачи</Text>
+      <Text style={styles.subtitle}>
+        Планируйте дела и отмечайте выполненное.
+      </Text>
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.form}>
+        <Text style={styles.formTitle}>Новая задача</Text>
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Название задачи"
+          placeholderTextColor="#85899A"
+          style={styles.input}
+        />
+        <TextInput
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Описание (необязательно)"
+          placeholderTextColor="#85899A"
+          style={[styles.input, styles.description]}
+          multiline
+        />
+
+        <Text style={styles.label}>Приоритет</Text>
+        <View style={styles.priorities}>
+          {([
+            ['low', 'Низкий'],
+            ['medium', 'Средний'],
+            ['high', 'Высокий'],
+          ] as const).map(([value, label]) => (
+            <Pressable
+              key={value}
+              onPress={() => setPriority(value)}
+              style={[
+                styles.priorityButton,
+                priority === value && styles.prioritySelected,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.priorityText,
+                  priority === value && styles.priorityTextSelected,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable style={styles.addButton} onPress={addTask}>
+          <Text style={styles.addButtonText}>+ Добавить задачу</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle}>Все задачи</Text>
+        <Text style={styles.counter}>{tasks.length}</Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#635BFF" />
+      ) : tasks.length === 0 ? (
+        <Text style={styles.empty}>Задач пока нет — добавьте первую выше.</Text>
+      ) : (
+        tasks.map((task) => (
+          <View key={task.id} style={styles.taskCard}>
+            <Pressable
+              onPress={() => toggleTask(task)}
+              style={styles.taskRow}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  task.completed && styles.checkboxDone,
+                ]}
+              >
+                <Text style={styles.checkmark}>
+                  {task.completed ? '✓' : ''}
+                </Text>
+              </View>
+              <View style={styles.taskBody}>
+                <Text
+                  style={[
+                    styles.taskTitle,
+                    task.completed && styles.completedTitle,
+                  ]}
+                >
+                  {task.title}
+                </Text>
+                {task.description ? (
+                  <Text style={styles.taskDescription}>
+                    {task.description}
+                  </Text>
+                ) : null}
+                <View style={styles.metaRow}>
+                  <Text
+                    style={[
+                      styles.priorityBadge,
+                      task.priority === 'high' && styles.priorityHigh,
+                      task.priority === 'medium' && styles.priorityMedium,
+                      task.priority === 'low' && styles.priorityLow,
+                    ]}
+                  >
+                    {task.priority === 'high'
+                      ? 'Высокий приоритет'
+                      : task.priority === 'low'
+                        ? 'Низкий приоритет'
+                        : 'Средний приоритет'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.statusBadge,
+                      task.completed && styles.statusDone,
+                    ]}
+                  >
+                    {task.completed ? '✓ Выполнена' : 'В процессе'}
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => deleteTask(task.id)}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteText}>Удалить</Text>
+            </Pressable>
+          </View>
+        ))
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  page: {
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center',
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 48,
+    gap: 16,
+    backgroundColor: '#F6F7FC',
+    minHeight: '100%',
+  },
+  eyebrow: {
+    color: '#7467F0',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  heading: {
+    color: '#24233A',
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+  },
+  subtitle: {
+    color: '#77798D',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  error: {
+    color: '#B4233C',
+    padding: 14,
+    backgroundColor: '#FFF0F1',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FFD9DE',
+  },
+  form: {
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    gap: 13,
+    borderWidth: 1,
+    borderColor: '#E9EAF3',
+  },
+  formTitle: {
+    fontSize: 19,
+    color: '#24233A',
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  input: {
+    backgroundColor: '#F8F9FD',
+    borderWidth: 1,
+    borderColor: '#E6E8F1',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    color: '#24233A',
+    fontSize: 15,
+  },
+  description: {
+    minHeight: 82,
+    textAlignVertical: 'top',
+  },
+  label: {
+    color: '#484A60',
+    fontWeight: '700',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  priorities: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  priorityButton: {
+    borderWidth: 1,
+    borderColor: '#E3E5EF',
+    backgroundColor: '#F8F9FC',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  prioritySelected: {
+    backgroundColor: '#EEECFF',
+    borderColor: '#7568F3',
+  },
+  priorityText: {
+    color: '#5C6074',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  priorityTextSelected: {
+    color: '#5E50D8',
+    fontWeight: '800',
+  },
+  addButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    backgroundColor: '#6B5CE7',
+    paddingVertical: 15,
+    paddingHorizontal: 18,
+    borderRadius: 13,
+    marginTop: 5,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    marginBottom: 2,
+  },
+  listTitle: {
+    fontSize: 22,
+    color: '#24233A',
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  counter: {
+    backgroundColor: '#EAE8FF',
+    color: '#6254D6',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 12,
+    overflow: 'hidden',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  empty: {
+    color: '#77798D',
+    paddingVertical: 26,
+    paddingHorizontal: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  taskCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#E9EAF3',
+    padding: 17,
+    gap: 13,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#C8CAD9',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxDone: {
+    backgroundColor: '#6B5CE7',
+    borderColor: '#6B5CE7',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  taskBody: {
+    flex: 1,
+    gap: 7,
+  },
+  taskTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#29283F',
+    fontWeight: '750',
+  },
+  completedTitle: {
+    textDecorationLine: 'line-through',
+    color: '#9699AA',
+  },
+  taskDescription: {
+    color: '#77798D',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 4,
+  },
+  priorityBadge: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  priorityHigh: {
+    backgroundColor: '#FFF0F0',
+    color: '#C2414D',
+  },
+  priorityMedium: {
+    backgroundColor: '#F0EEFF',
+    color: '#6254D6',
+  },
+  priorityLow: {
+    backgroundColor: '#EAF7F0',
+    color: '#277A50',
+  },
+  statusBadge: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    backgroundColor: '#F1F2F7',
+    color: '#666A7D',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusDone: {
+    backgroundColor: '#E7F7ED',
+    color: '#277A50',
+  },
+  deleteButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+    backgroundColor: '#FFF2F2',
+  },
+  deleteText: {
+    color: '#BD4050',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+});
