@@ -32,6 +32,8 @@ export class TasksController {
       description?: string;
       priority?: string;
       dueAt?: string | null;
+      startAt?: string | null;
+      endAt?: string | null;
     },
   ) {
     if (typeof body.title !== 'string' || !body.title.trim()) {
@@ -55,6 +57,8 @@ export class TasksController {
       description: body.description,
       priority: body.priority,
       dueAt: body.dueAt,
+      startAt: body.startAt,
+      endAt: body.endAt,
     });
   }
 
@@ -68,6 +72,8 @@ export class TasksController {
       completed?: boolean;
       priority?: string;
       dueAt?: string | null;
+      startAt?: string | null;
+      endAt?: string | null;
     },
   ) {
     if (

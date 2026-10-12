@@ -30,12 +30,16 @@ export class TasksService {
     description?: string;
     priority?: string;
     dueAt?: string | null;
+    startAt?: string | null;
+    endAt?: string | null;
   }) {
     const data: {
       title: string;
       description: string;
       priority: string;
       dueAt?: Date | null;
+      startAt?: Date | null;
+      endAt?: Date | null;
     } = {
       title: body.title.trim(),
       description: body.description ?? '',
@@ -50,6 +54,21 @@ export class TasksService {
       data.dueAt = date;
     }
 
+    for (const field of ['startAt', 'endAt'] as const) {
+      const value = body[field];
+      if (value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          throw new BadRequestException(`Invalid ${field} date`);
+        }
+        data[field] = date;
+      }
+    }
+
+    if (data.startAt && data.endAt && data.endAt <= data.startAt) {
+      throw new BadRequestException('endAt must be later than startAt');
+    }
+
     return this.prisma.task.create({ data });
   }
 
@@ -61,6 +80,8 @@ export class TasksService {
       completed?: boolean;
       priority?: string;
       dueAt?: string | null;
+      startAt?: string | null;
+      endAt?: string | null;
     },
   ) {
     await this.findOne(id);
@@ -71,6 +92,8 @@ export class TasksService {
       completed?: boolean;
       priority?: string;
       dueAt?: Date | null;
+      startAt?: Date | null;
+      endAt?: Date | null;
     } = {};
 
     if (body.title !== undefined) {
@@ -94,6 +117,28 @@ export class TasksService {
         }
         data.dueAt = date;
       }
+    }
+
+    for (const field of ['startAt', 'endAt'] as const) {
+      if (body[field] !== undefined) {
+        const value = body[field];
+        if (value === null || value === '') {
+          data[field] = null;
+        } else {
+          const date = new Date(value);
+          if (Number.isNaN(date.getTime())) {
+            throw new BadRequestException(`Invalid ${field} date`);
+          }
+          data[field] = date;
+        }
+      }
+    }
+
+    const existing = await this.findOne(id);
+    const startAt = data.startAt === undefined ? existing.startAt : data.startAt;
+    const endAt = data.endAt === undefined ? existing.endAt : data.endAt;
+    if (startAt && endAt && endAt <= startAt) {
+      throw new BadRequestException('endAt must be later than startAt');
     }
 
     return this.prisma.task.update({ where: { id }, data });

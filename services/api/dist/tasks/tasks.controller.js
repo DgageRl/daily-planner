@@ -40,6 +40,8 @@ let TasksController = class TasksController {
             description: body.description,
             priority: body.priority,
             dueAt: body.dueAt,
+            startAt: body.startAt,
+            endAt: body.endAt,
         });
     }
     update(id, body) {
