@@ -267,7 +267,7 @@ export default function CalendarScreen() {
           <Text style={styles.todayButtonText}>Сегодня</Text>
         </Pressable>
 
-        {viewMode !== 'day' && (
+        {viewMode === 'month' && (
           <View style={styles.weekRow}>
             {WEEKDAYS.map((day) => (
               <View key={day} style={styles.weekCell}>
@@ -284,8 +284,6 @@ export default function CalendarScreen() {
             const isSelected = key === selectedDay;
             const isToday = key === todayKey;
             const dayTasks = tasksByDate[key] ?? [];
-            const hasActive = dayTasks.some((task) => !task.completed);
-            const hasCompleted = dayTasks.some((task) => task.completed);
 
             return (
               <Pressable
@@ -294,8 +292,20 @@ export default function CalendarScreen() {
                 style={[
                   styles.dayCell,
                   viewMode === 'day' && styles.singleDayCell,
+                  viewMode === 'week' && styles.weekDayCell,
+                  viewMode === 'week' && isSelected && styles.weekDayCellSelected,
                 ]}
               >
+                {viewMode === 'week' && (
+                  <Text
+                    style={[
+                      styles.weekDayName,
+                      isSelected && styles.weekDayNameSelected,
+                    ]}
+                  >
+                    {WEEKDAYS[(day.getDay() + 6) % 7]}
+                  </Text>
+                )}
                 <View
                   style={[
                     styles.dayNumberWrap,
@@ -315,30 +325,45 @@ export default function CalendarScreen() {
                   </Text>
                 </View>
 
-                <View style={styles.dots}>
-                  {hasActive && (
-                    <View
-                      style={[
-                        styles.dot,
-                        { backgroundColor: '#6B5CE7' },
-                      ]}
-                    />
-                  )}
-                  {hasCompleted && (
-                    <View
-                      style={[
-                        styles.dot,
-                        { backgroundColor: '#42B883' },
-                      ]}
-                    />
-                  )}
-                  {dayTasks.length > 2 && (
-                    <View
-                      style={[
-                        styles.dot,
-                        { backgroundColor: '#F2B84B' },
-                      ]}
-                    />
+                <View style={styles.dayTaskPills}>
+                  {dayTasks
+                    .slice(0, viewMode === 'month' ? 2 : 3)
+                    .map((task) => {
+                      const pillStyle = task.completed
+                        ? styles.dayTaskPillDone
+                        : task.priority === 'high'
+                          ? styles.dayTaskPillHigh
+                          : task.priority === 'low'
+                            ? styles.dayTaskPillLow
+                            : styles.dayTaskPillNormal;
+
+                      const textStyle = task.completed
+                        ? styles.dayTaskTextDone
+                        : task.priority === 'high'
+                          ? styles.dayTaskTextHigh
+                          : task.priority === 'low'
+                            ? styles.dayTaskTextLow
+                            : styles.dayTaskTextNormal;
+
+                      return (
+                        <Pressable
+                          key={task.id}
+                          onPress={() => setSelectedDay(key)}
+                          style={[styles.dayTaskPill, pillStyle]}
+                        >
+                          <Text
+                            numberOfLines={1}
+                            style={[styles.dayTaskText, textStyle]}
+                          >
+                            {task.title}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  {dayTasks.length > (viewMode === 'month' ? 2 : 3) && (
+                    <Text style={styles.moreTasksText}>
+                      +{dayTasks.length - (viewMode === 'month' ? 2 : 3)}
+                    </Text>
                   )}
                 </View>
               </Pressable>
@@ -425,24 +450,27 @@ export default function CalendarScreen() {
                 <View style={styles.taskMeta}>
                   <Text
                     style={[
-                      styles.priorityText,
-                      task.priority === 'high' && styles.highPriority,
-                      task.priority === 'low' && styles.lowPriority,
+                      styles.priorityBadge,
+                      task.priority === 'high' && styles.priorityBadgeHigh,
+                      task.priority === 'low' && styles.priorityBadgeLow,
+                      task.completed && styles.priorityBadgeDone,
                     ]}
                   >
-                    {task.priority === 'high'
-                      ? 'Высокий приоритет'
-                      : task.priority === 'low'
-                        ? 'Низкий приоритет'
-                        : 'Обычный приоритет'}
+                    {task.completed
+                      ? 'Завершена'
+                      : task.priority === 'high'
+                        ? 'Высокий приоритет'
+                        : task.priority === 'low'
+                          ? 'Низкий приоритет'
+                          : 'Обычный приоритет'}
                   </Text>
                   <Text
                     style={[
-                      styles.statusText,
-                      task.completed && styles.statusDone,
+                      styles.statusBadge,
+                      task.completed ? styles.statusBadgeDone : styles.statusBadgeActive,
                     ]}
                   >
-                    {task.completed ? '✓ Выполнена' : 'В процессе'}
+                    {task.completed ? '✓ Выполнена' : '● В процессе'}
                   </Text>
                 </View>
               </View>
@@ -547,6 +575,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 64,
   },
+  weekDayCell: {
+    borderRadius: 14,
+    paddingTop: 8,
+    paddingBottom: 5,
+    minHeight: 68,
+  },
+  weekDayCellSelected: {
+    backgroundColor: '#F0EEFF',
+  },
+  weekDayName: {
+    color: '#9293A7',
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  weekDayNameSelected: {
+    color: '#6B5CE7',
+  },
   dayNumberWrap: {
     width: 34, height: 34, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
@@ -557,8 +603,40 @@ const styles = StyleSheet.create({
   selectedDayText: { color: '#FFFFFF', fontWeight: '800' },
   todayDay: { backgroundColor: '#EFEDFF', borderWidth: 1, borderColor: '#6B5CE7' },
   todayText: { color: '#6B5CE7', fontWeight: '800' },
-  dots: { height: 8, flexDirection: 'row', gap: 3, marginTop: 2 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
+  dayTaskPills: {
+    width: '100%',
+    alignSelf: 'stretch',
+    gap: 3,
+    marginTop: 5,
+  },
+  dayTaskPill: {
+    borderRadius: 4,
+    paddingHorizontal: 3,
+    paddingVertical: 3,
+    minWidth: 0,
+  },
+  dayTaskPillNormal: { backgroundColor: '#EAE7FF' },
+  dayTaskPillHigh: { backgroundColor: '#FFE5E9' },
+  dayTaskPillLow: { backgroundColor: '#DDF5E8' },
+  dayTaskPillDone: { backgroundColor: '#DDF5E8' },
+  dayTaskText: {
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: '700',
+  },
+  dayTaskTextNormal: { color: '#5545B5' },
+  dayTaskTextHigh: { color: '#B83F59' },
+  dayTaskTextLow: { color: '#237B57' },
+  dayTaskTextDone: {
+    color: '#237B57',
+    textDecorationLine: 'line-through',
+  },
+  moreTasksText: {
+    color: '#77778E',
+    fontSize: 9,
+    fontWeight: '800',
+    paddingLeft: 2,
+  },
   legend: {
     flexDirection: 'row', justifyContent: 'center',
     gap: 20, marginTop: 16, paddingTop: 14,
@@ -620,11 +698,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap',
     alignItems: 'center', gap: 10, marginTop: 10,
   },
-  priorityText: { color: '#8B7CE8', fontSize: 10, fontWeight: '700' },
-  highPriority: { color: '#E85D75' },
-  lowPriority: { color: '#42A985' },
-  statusText: { color: '#8B7CE8', fontSize: 10, fontWeight: '700' },
-  statusDone: { color: '#42A985' },
+  priorityBadge: {
+    color: '#6B5CE7',
+    backgroundColor: '#F0EEFF',
+    fontSize: 10,
+    fontWeight: '800',
+    overflow: 'hidden',
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  priorityBadgeHigh: {
+    color: '#D94D67',
+    backgroundColor: '#FFF0F2',
+  },
+  priorityBadgeLow: {
+    color: '#268A68',
+    backgroundColor: '#EAF8F1',
+  },
+  priorityBadgeDone: {
+    color: '#268A68',
+    backgroundColor: '#EAF8F1',
+  },
+  statusBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    overflow: 'hidden',
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  statusBadgeActive: {
+    color: '#6B5CE7',
+    backgroundColor: '#F0EEFF',
+  },
+  statusBadgeDone: {
+    color: '#268A68',
+    backgroundColor: '#EAF8F1',
+  },
   footerNote: {
     flexDirection: 'row', gap: 10, alignItems: 'flex-start',
     backgroundColor: '#EFEDFF', borderRadius: 16,
