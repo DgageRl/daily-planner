@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -18,6 +18,8 @@ type Task = {
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
   dueAt: string | null;
+  startAt: string | null;
+  endAt: string | null;
 };
 
 function anyDateKey(date: Date): string {
@@ -39,12 +41,159 @@ function anyDateMonthCells(month: Date): (Date | null)[] {
   return cells;
 }
 
+type TimeWheelProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function TimeWheel({ label, value, onChange }: TimeWheelProps) {
+  const itemHeight = 44;
+  const [hourText, minuteText] = value.split(":");
+  const selectedHour = Number(hourText) || 0;
+  const selectedMinute = Number(minuteText) || 0;
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+
+  const hourRef = useRef<ScrollView>(null);
+  const minuteRef = useRef<ScrollView>(null);
+  const hourTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const minuteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function changeHour(hour: number) {
+    onChange(`${String(hour).padStart(2, "0")}:${String(selectedMinute).padStart(2, "0")}`);
+  }
+
+  function changeMinute(minute: number) {
+    onChange(`${String(selectedHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+  }
+
+  function snap(
+    ref: React.RefObject<ScrollView | null>,
+    offset: number,
+    max: number,
+    select: (index: number) => void,
+  ) {
+    const index = Math.max(0, Math.min(max, Math.round(offset / itemHeight)));
+    const target = index * itemHeight;
+    if (Math.abs(offset - target) > 0.5) {
+      ref.current?.scrollTo({ y: target, animated: true });
+    }
+    select(index);
+  }
+
+  function scheduleHour(offset: number) {
+    if (hourTimer.current) clearTimeout(hourTimer.current);
+    hourTimer.current = setTimeout(() => {
+      snap(hourRef, offset, 23, changeHour);
+    }, 160);
+  }
+
+  function scheduleMinute(offset: number) {
+    if (minuteTimer.current) clearTimeout(minuteTimer.current);
+    minuteTimer.current = setTimeout(() => {
+      snap(minuteRef, offset, 11, (i) => changeMinute(i * 5));
+    }, 160);
+  }
+
+  useEffect(() => () => {
+    if (hourTimer.current) clearTimeout(hourTimer.current);
+    if (minuteTimer.current) clearTimeout(minuteTimer.current);
+  }, []);
+
+  return (
+    <View style={styles.wheelField}>
+      <Text style={styles.wheelLabel}>{label}</Text>
+      <View style={[styles.wheelRow, { height: itemHeight * 3 }]}>
+        <View style={[styles.wheelColumn, { height: itemHeight * 3 }]}>
+          <View pointerEvents="none" style={styles.wheelSelection} />
+          <ScrollView
+            ref={hourRef}
+            style={{ height: itemHeight * 3 }}
+            contentContainerStyle={{ paddingVertical: itemHeight }}
+            contentOffset={{ x: 0, y: selectedHour * itemHeight }}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            snapToInterval={itemHeight}
+            decelerationRate="fast"
+            scrollEventThrottle={16}
+            onScroll={(e) => scheduleHour(e.nativeEvent.contentOffset.y)}
+            onScrollEndDrag={(e) => scheduleHour(e.nativeEvent.contentOffset.y)}
+            onMomentumScrollEnd={(e) => {
+              if (hourTimer.current) clearTimeout(hourTimer.current);
+              snap(hourRef, e.nativeEvent.contentOffset.y, 23, changeHour);
+            }}
+          >
+            {hours.map((hour) => (
+              <Pressable
+                key={hour}
+                style={[styles.wheelItem, { height: itemHeight }]}
+                onPress={() => {
+                  hourRef.current?.scrollTo({ y: hour * itemHeight, animated: true });
+                  changeHour(hour);
+                }}
+              >
+                <Text style={[
+                  styles.wheelText,
+                  hour === selectedHour && styles.wheelTextSelected,
+                ]}>{String(hour).padStart(2, "0")}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        <Text style={styles.wheelColon}>:</Text>
+
+        <View style={[styles.wheelColumn, { height: itemHeight * 3 }]}>
+          <View pointerEvents="none" style={styles.wheelSelection} />
+          <ScrollView
+            ref={minuteRef}
+            style={{ height: itemHeight * 3 }}
+            contentContainerStyle={{ paddingVertical: itemHeight }}
+            contentOffset={{ x: 0, y: Math.round(selectedMinute / 5) * itemHeight }}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            snapToInterval={itemHeight}
+            decelerationRate="fast"
+            scrollEventThrottle={16}
+            onScroll={(e) => scheduleMinute(e.nativeEvent.contentOffset.y)}
+            onScrollEndDrag={(e) => scheduleMinute(e.nativeEvent.contentOffset.y)}
+            onMomentumScrollEnd={(e) => {
+              if (minuteTimer.current) clearTimeout(minuteTimer.current);
+              snap(minuteRef, e.nativeEvent.contentOffset.y, 11, (i) => changeMinute(i * 5));
+            }}
+          >
+            {minutes.map((minute) => (
+              <Pressable
+                key={minute}
+                style={[styles.wheelItem, { height: itemHeight }]}
+                onPress={() => {
+                  minuteRef.current?.scrollTo({ y: (minute / 5) * itemHeight, animated: true });
+                  changeMinute(minute);
+                }}
+              >
+                <Text style={[
+                  styles.wheelText,
+                  minute === selectedMinute && styles.wheelTextSelected,
+                ]}>{String(minute).padStart(2, "0")}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function TasksScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [dueAt, setDueAt] = useState<string | null>(null);
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
@@ -69,6 +218,7 @@ export default function TasksScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   const completedCount = tasks.filter((task) => task.completed).length;
   const activeCount = tasks.length - completedCount;
@@ -96,7 +246,44 @@ export default function TasksScreen() {
     loadTasks();
   }, [loadTasks]);
 
-  async function addTask() {
+  function editTask(task: Task) {
+    setEditingTaskId(task.id);
+    setTitle(task.title);
+    setDescription(task.description);
+    setPriority(task.priority);
+    setDueAt(task.dueAt ? anyDateKey(new Date(task.dueAt)) : null);
+
+    setScheduleEnabled(Boolean(task.startAt || task.endAt));
+    setStartTime(
+      task.startAt
+        ? `${String(new Date(task.startAt).getHours()).padStart(2, '0')}:${String(new Date(task.startAt).getMinutes()).padStart(2, '0')}`
+        : '09:00'
+    );
+    setEndTime(
+      task.endAt
+        ? `${String(new Date(task.endAt).getHours()).padStart(2, '0')}:${String(new Date(task.endAt).getMinutes()).padStart(2, '0')}`
+        : '10:00'
+    );
+
+    setShowDatePicker(false);
+    setCalendarMonth(task.dueAt ? new Date(task.dueAt) : new Date());
+    setError('');
+  }
+
+  function resetTaskForm() {
+    setEditingTaskId(null);
+    setTitle('');
+    setDescription('');
+    setPriority('medium');
+    setDueAt(null);
+    setScheduleEnabled(false);
+    setStartTime('09:00');
+    setEndTime('10:00');
+    setShowDatePicker(false);
+    setError('');
+  }
+
+  async function saveTask() {
     if (!title.trim()) {
       setError('Введите название задачи.');
       return;
@@ -104,8 +291,10 @@ export default function TasksScreen() {
 
     try {
       setError('');
-      const response = await fetch(`${API_URL}/tasks`, {
-        method: 'POST',
+      const response = await fetch(
+        `${API_URL}/tasks${editingTaskId ? `/${editingTaskId}` : ''}`,
+        {
+        method: editingTaskId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
@@ -114,14 +303,17 @@ export default function TasksScreen() {
           dueAt: dueAt
             ? new Date(`${dueAt}T12:00:00`).toISOString()
             : null,
+          startAt: scheduleEnabled
+            ? new Date(`${dueAt || dateString(0)}T${startTime}:00`).toISOString()
+            : null,
+          endAt: scheduleEnabled
+            ? new Date(`${dueAt || dateString(0)}T${endTime}:00`).toISOString()
+            : null,
         }),
       });
       if (!response.ok) throw new Error();
 
-      setTitle('');
-      setDescription('');
-      setPriority('medium');
-      setDueAt(null);
+      resetTaskForm();
       await loadTasks();
     } catch {
       setError('Не удалось сохранить задачу.');
@@ -165,7 +357,9 @@ export default function TasksScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.form}>
-        <Text style={styles.formTitle}>Новая задача</Text>
+        <Text style={styles.formTitle}>
+          {editingTaskId ? 'Редактирование задачи' : 'Новая задача'}
+        </Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
@@ -182,6 +376,28 @@ export default function TasksScreen() {
           multiline
         />
 
+        <Text style={styles.label}>Время в расписании</Text>
+        <Pressable
+          style={styles.anyDateToggle}
+          onPress={() => setScheduleEnabled((value) => !value)}
+        >
+          <Text style={styles.anyDateToggleText}>
+            {scheduleEnabled ? '✓ Добавить в расписание' : '+ Указать время начала и окончания'}
+          </Text>
+        </Pressable>
+
+        {scheduleEnabled && (
+          <View style={styles.scheduleFields}>
+            <Text style={styles.label}>Время начала и окончания</Text>
+            <Text style={styles.scheduleDateHint}>
+              Дата: {formatDueDate(dueAt || dateString(0))}
+            </Text>
+            <View style={styles.scheduleTimeRow}>
+              <TimeWheel label="Начало" value={startTime} onChange={setStartTime} />
+              <TimeWheel label="Окончание" value={endTime} onChange={setEndTime} />
+            </View>
+          </View>
+          )}
         <Text style={styles.label}>Дата выполнения</Text>
         <View style={styles.dateSummary}>
           <Text style={styles.dateSummaryText}>
@@ -310,9 +526,19 @@ export default function TasksScreen() {
           ))}
         </View>
 
-        <Pressable style={styles.addButton} onPress={addTask}>
-          <Text style={styles.addButtonText}>+ Добавить задачу</Text>
+        <Pressable style={styles.addButton} onPress={saveTask}>
+          <Text style={styles.addButtonText}>
+            {editingTaskId ? 'Сохранить изменения' : '+ Добавить задачу'}
+          </Text>
         </Pressable>
+        {editingTaskId && (
+          <Pressable
+            style={styles.dateQuickButton}
+            onPress={resetTaskForm}
+          >
+            <Text style={styles.dateQuickText}>Отмена</Text>
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.progressCard}>
@@ -437,6 +663,12 @@ export default function TasksScreen() {
               </View>
             </Pressable>
             <Pressable
+              onPress={() => editTask(task)}
+              style={styles.dateQuickButton}
+            >
+              <Text style={styles.dateQuickText}>Редактировать</Text>
+            </Pressable>
+            <Pressable
               onPress={() => deleteTask(task.id)}
               style={styles.deleteButton}
             >
@@ -450,6 +682,88 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
+  scheduleFields: {
+    marginTop: 10,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#F6F7FC',
+    gap: 8,
+  },
+  scheduleDateHint: {
+    color: "#666B7A",
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  wheelField: {
+    flex: 1,
+    minWidth: 0,
+  },
+  wheelLabel: {
+    color: "#34384A",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  wheelRow: {
+    height: 132,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+  wheelSelection: {
+    position: "absolute",
+    top: 44,
+    left: 2,
+    right: 2,
+    height: 44,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#7C3AED",
+    backgroundColor: "rgba(124, 58, 237, 0.10)",
+    borderRadius: 8,
+    zIndex: 5,
+  },
+  wheelColumn: {
+    height: 132,
+    flex: 1,
+  },
+  wheelItemActive: {
+    backgroundColor: "rgba(124, 58, 237, 0.24)",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#7C3AED",
+  },
+wheelItem: {
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  wheelText: {
+    color: "#969AAA",
+    fontSize: 18,
+  },
+  wheelTextSelected: {
+    color: "#6B5CE7",
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  wheelColon: {
+    color: "#6B5CE7",
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  scheduleTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  scheduleTimeField: {
+    flex: 1,
+  },
   progressCard: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,

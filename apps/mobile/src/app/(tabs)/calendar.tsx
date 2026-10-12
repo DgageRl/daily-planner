@@ -18,6 +18,8 @@ type Task = {
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
   dueAt: string | null;
+  startAt: string | null;
+  endAt: string | null;
 };
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -50,6 +52,22 @@ function sameMonth(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth();
 }
+
+const TIMELINE_START = 8;
+const TIMELINE_END = 23;
+const HOUR_HEIGHT = 54;
+
+function scheduledDateKey(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : dateKey(date);
+}
+
+function scheduledMinutes(value: string) {
+  const date = new Date(value);
+  return date.getHours() * 60 + date.getMinutes();
+}
+
 
 export default function CalendarScreen() {
   const [month, setMonth] = useState(() => {
@@ -277,6 +295,124 @@ export default function CalendarScreen() {
           </View>
         )}
 
+        {viewMode === 'week' ? (
+          <View style={styles.timelineCard}>
+            <View style={styles.timelineHeader}>
+              <View style={styles.timelineGutter} />
+              {visibleCalendarDays.map((day) => (
+                <Pressable
+                  key={dateKey(day)}
+                  style={[
+                    styles.timelineDayHeader,
+                    dateKey(day) === selectedDay && styles.timelineDayHeaderSelected,
+                  ]}
+                  onPress={() => setSelectedDay(dateKey(day))}
+                >
+                  <Text style={styles.timelineDayName}>
+                    {WEEKDAYS[(day.getDay() + 6) % 7]}
+                  </Text>
+                  <Text style={[
+                    styles.timelineDayNumber,
+                    dateKey(day) === todayKey && styles.timelineTodayNumber,
+                    dateKey(day) === selectedDay && styles.timelineSelectedNumber,
+                  ]}>
+                    {day.getDate()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <ScrollView
+              style={styles.timelineScroll}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              <View style={styles.timelineBody}>
+                <View style={styles.timelineHours}>
+                  {Array.from(
+                    { length: TIMELINE_END - TIMELINE_START },
+                    (_, index) => TIMELINE_START + index
+                  ).map((hour) => (
+                    <View key={hour} style={styles.timelineHourCell}>
+                      <Text style={styles.timelineHourText}>
+                        {String(hour).padStart(2, '0')}:00
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                {visibleCalendarDays.map((day) => {
+                  const key = dateKey(day);
+                  const dayTasks = tasks.filter((task) =>
+                    scheduledDateKey(task.startAt) === key
+                    && !!task.endAt
+                    && new Date(task.endAt).getTime() > new Date(task.startAt!).getTime()
+                  );
+                  return (
+                    <View key={key} style={styles.timelineDayColumn}>
+                      {Array.from(
+                        { length: TIMELINE_END - TIMELINE_START },
+                        (_, index) => (
+                          <View key={index} style={styles.timelineHourLine} />
+                        )
+                      )}
+                      {dayTasks.map((task) => {
+                        const startMinutes = scheduledMinutes(task.startAt!);
+                        const endMinutes = scheduledMinutes(task.endAt!);
+                        const top = (startMinutes - TIMELINE_START * 60) / 60 * HOUR_HEIGHT;
+                        const bottom = (endMinutes - TIMELINE_START * 60) / 60 * HOUR_HEIGHT;
+                        if (endMinutes <= TIMELINE_START * 60 || startMinutes >= TIMELINE_END * 60) return null;
+                        const visibleTop = Math.max(0, top);
+                        const visibleBottom = Math.min(
+                          (TIMELINE_END - TIMELINE_START) * HOUR_HEIGHT,
+                          bottom
+                        );
+                        const blockStyle = task.completed
+                          ? styles.timelineBlockDone
+                          : task.priority === 'high'
+                            ? styles.timelineBlockHigh
+                            : task.priority === 'low'
+                              ? styles.timelineBlockLow
+                              : styles.timelineBlockNormal;
+                        const blockTextStyle = task.completed
+                          ? styles.timelineBlockTextDone
+                          : task.priority === 'high'
+                            ? styles.timelineBlockTextHigh
+                            : task.priority === 'low'
+                              ? styles.timelineBlockTextLow
+                              : styles.timelineBlockTextNormal;
+                        return (
+                          <Pressable
+                            key={task.id}
+                            style={[
+                              styles.timelineTaskBlock,
+                              blockStyle,
+                              {
+                                top: visibleTop,
+                                height: Math.max(28, visibleBottom - visibleTop),
+                              },
+                            ]}
+                            onPress={() => setSelectedDay(key)}
+                          >
+                            <Text numberOfLines={2} style={[styles.timelineBlockTitle, blockTextStyle]}>
+                              {task.title}
+                            </Text>
+                            <Text style={[styles.timelineBlockTime, blockTextStyle]}>
+                              {new Date(task.startAt!).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                              {'–'}
+                              {new Date(task.endAt!).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+            <Text style={styles.timelineHint}>
+              Показаны задачи с заданным временем начала и окончания, с 08:00 до 22:00.
+            </Text>
+          </View>
+        ) : (
         <View style={styles.daysGrid}>
           {visibleCalendarDays.map((day) => {
             const key = dateKey(day);
@@ -292,11 +428,11 @@ export default function CalendarScreen() {
                 style={[
                   styles.dayCell,
                   viewMode === 'day' && styles.singleDayCell,
-                  viewMode === 'week' && styles.weekDayCell,
-                  viewMode === 'week' && isSelected && styles.weekDayCellSelected,
+                  viewMode !== 'month' && styles.weekDayCell,
+                  viewMode !== 'month' && isSelected && styles.weekDayCellSelected,
                 ]}
               >
-                {viewMode === 'week' && (
+                {viewMode !== 'month' && (
                   <Text
                     style={[
                       styles.weekDayName,
@@ -370,6 +506,7 @@ export default function CalendarScreen() {
             );
           })}
         </View>
+        )}
 
         <View style={styles.legend}>
           <View style={styles.legendItem}>
@@ -566,6 +703,64 @@ const styles = StyleSheet.create({
   weekCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
   weekText: { color: '#9696AA', fontSize: 11, fontWeight: '700' },
   daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  timelineCard: {
+    borderWidth: 1, borderColor: '#ECECF5', borderRadius: 14,
+    overflow: 'hidden', backgroundColor: '#FFFFFF',
+  },
+  timelineHeader: {
+    flexDirection: 'row', backgroundColor: '#FAF9FF',
+    borderBottomWidth: 1, borderBottomColor: '#ECECF5',
+  },
+  timelineGutter: { width: 42 },
+  timelineDayHeader: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 9, minWidth: 0,
+  },
+  timelineDayHeaderSelected: { backgroundColor: '#F0EEFF' },
+  timelineDayName: { color: '#9293A7', fontSize: 10, fontWeight: '700' },
+  timelineDayNumber: {
+    marginTop: 5, color: '#38374F', fontSize: 12, fontWeight: '800',
+  },
+  timelineTodayNumber: {
+    color: '#6B5CE7', textDecorationLine: 'underline',
+  },
+  timelineSelectedNumber: {
+    color: '#FFFFFF', backgroundColor: '#6B5CE7',
+    overflow: 'hidden', borderRadius: 9, paddingHorizontal: 6, paddingVertical: 3,
+  },
+  timelineScroll: { maxHeight: 570 },
+  timelineBody: { flexDirection: 'row' },
+  timelineHours: { width: 42 },
+  timelineHourCell: {
+    height: 54, paddingTop: 3, paddingRight: 4,
+    alignItems: 'flex-end', borderBottomWidth: 1, borderBottomColor: '#F0F0F7',
+  },
+  timelineHourText: { color: '#9293A7', fontSize: 9 },
+  timelineDayColumn: {
+    flex: 1, height: 756, minWidth: 0, position: 'relative',
+    borderLeftWidth: 1, borderLeftColor: '#ECECF5',
+  },
+  timelineHourLine: {
+    height: 54, borderBottomWidth: 1, borderBottomColor: '#F0F0F7',
+  },
+  timelineTaskBlock: {
+    position: 'absolute', left: 1, right: 1, zIndex: 2,
+    borderRadius: 5, paddingHorizontal: 3, paddingVertical: 3,
+    overflow: 'hidden', borderLeftWidth: 2,
+  },
+  timelineBlockNormal: { backgroundColor: '#EAE7FF', borderLeftColor: '#6B5CE7' },
+  timelineBlockHigh: { backgroundColor: '#FFE5E9', borderLeftColor: '#F06B7A' },
+  timelineBlockLow: { backgroundColor: '#DDF5E8', borderLeftColor: '#42B883' },
+  timelineBlockDone: { backgroundColor: '#DDF5E8', borderLeftColor: '#42B883' },
+  timelineBlockTitle: { fontSize: 9, fontWeight: '800' },
+  timelineBlockTextNormal: { color: '#5545B5' },
+  timelineBlockTextHigh: { color: '#B83F59' },
+  timelineBlockTextLow: { color: '#237B57' },
+  timelineBlockTextDone: { color: '#237B57', textDecorationLine: 'line-through' },
+  timelineBlockTime: { fontSize: 8, marginTop: 2 },
+  timelineHint: {
+    padding: 10, color: '#9293A7', fontSize: 10, lineHeight: 15,
+  },
   dayCell: {
     width: '14.2857%', alignItems: 'center',
     paddingVertical: 3, minHeight: 49,

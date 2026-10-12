@@ -1,0 +1,930 @@
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+const API_URL = 'http://localhost:3000';
+
+type Task = {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+  priority: 'low' | 'medium' | 'high';
+  dueAt: string | null;
+};
+
+function anyDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function anyDateMonthCells(month: Date): (Date | null)[] {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const offset = (first.getDay() + 6) % 7;
+  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells: (Date | null)[] = Array(offset).fill(null);
+  for (let day = 1; day <= count; day++) {
+    cells.push(new Date(month.getFullYear(), month.getMonth(), day));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+export default function TasksScreen() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<Task['priority']>('medium');
+  const [dueAt, setDueAt] = useState<string | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+
+  function dateString(offset: number) {
+    const date = new Date();
+    date.setDate(date.getDate() + offset);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatDueDate(value: string | null) {
+    if (!value) return 'Без даты';
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  }
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+
+  const completedCount = tasks.filter((task) => task.completed).length;
+  const activeCount = tasks.length - completedCount;
+  const progress = tasks.length ? completedCount / tasks.length : 0;
+  const visibleTasks = tasks.filter((task) => {
+    if (filter === 'active') return !task.completed;
+    if (filter === 'completed') return task.completed;
+    return true;
+  });
+
+  const loadTasks = useCallback(async () => {
+    try {
+      setError('');
+      const response = await fetch(`${API_URL}/tasks`);
+      if (!response.ok) throw new Error();
+      setTasks(await response.json());
+    } catch {
+      setError('Не удалось загрузить задачи. Проверь API на порту 3000.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  async function addTask() {
+    if (!title.trim()) {
+      setError('Введите название задачи.');
+      return;
+    }
+
+    try {
+      setError('');
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          priority,
+          dueAt: dueAt
+            ? new Date(`${dueAt}T12:00:00`).toISOString()
+            : null,
+        }),
+      });
+      if (!response.ok) throw new Error();
+
+      setTitle('');
+      setDescription('');
+      setPriority('medium');
+      setDueAt(null);
+      await loadTasks();
+    } catch {
+      setError('Не удалось сохранить задачу.');
+    }
+  }
+
+  async function toggleTask(task: Task) {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !task.completed }),
+      });
+      if (!response.ok) throw new Error();
+      await loadTasks();
+    } catch {
+      setError('Не удалось изменить статус задачи.');
+    }
+  }
+
+  async function deleteTask(id: string) {
+    try {
+      const response = await fetch(`${API_URL}/tasks/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error();
+      await loadTasks();
+    } catch {
+      setError('Не удалось удалить задачу.');
+    }
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.page}>
+      <Text style={styles.eyebrow}>МОЁ ПРОСТРАНСТВО</Text>
+      <Text style={styles.heading}>Мои задачи</Text>
+      <Text style={styles.subtitle}>
+        Планируйте дела и отмечайте выполненное.
+      </Text>
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.form}>
+        <Text style={styles.formTitle}>Новая задача</Text>
+        <TextInput
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Название задачи"
+          placeholderTextColor="#85899A"
+          style={styles.input}
+        />
+        <TextInput
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Описание (необязательно)"
+          placeholderTextColor="#85899A"
+          style={[styles.input, styles.description]}
+          multiline
+        />
+
+        <Text style={styles.label}>Дата выполнения</Text>
+        <View style={styles.dateSummary}>
+          <Text style={styles.dateSummaryText}>
+            {dueAt ? `📅 ${formatDueDate(dueAt)}` : '📅 Дата не выбрана'}
+          </Text>
+        </View>
+        <View style={styles.dateQuickActions}>
+          <Pressable
+            style={styles.dateQuickButton}
+            onPress={() => { setDueAt(dateString(0)); setShowDatePicker(false); }}
+          >
+            <Text style={styles.dateQuickText}>Сегодня</Text>
+          </Pressable>
+          <Pressable
+            style={styles.dateQuickButton}
+            onPress={() => { setDueAt(dateString(1)); setShowDatePicker(false); }}
+          >
+            <Text style={styles.dateQuickText}>Завтра</Text>
+          </Pressable>
+          <Pressable
+            style={styles.dateQuickButton}
+            onPress={() => { setDueAt(null); setShowDatePicker(false); }}
+          >
+            <Text style={styles.dateQuickText}>Без даты</Text>
+          </Pressable>
+        </View>
+        <Pressable
+          style={styles.anyDateToggle}
+          onPress={() => setShowDatePicker((value) => !value)}
+        >
+          <Text style={styles.anyDateToggleText}>
+            {showDatePicker ? 'Закрыть календарь ▲' : 'Выбрать другую дату ▾'}
+          </Text>
+        </Pressable>
+        {showDatePicker && (
+          <View style={styles.anyDateCalendar}>
+            <View style={styles.anyDateHeader}>
+              <Pressable
+                style={styles.anyDateNav}
+                onPress={() => setCalendarMonth((month) =>
+                  new Date(month.getFullYear(), month.getMonth() - 1, 1)
+                )}
+              >
+                <Text style={styles.anyDateNavText}>‹</Text>
+              </Pressable>
+              <Text style={styles.anyDateMonth}>
+                {calendarMonth.toLocaleDateString('ru-RU', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </Text>
+              <Pressable
+                style={styles.anyDateNav}
+                onPress={() => setCalendarMonth((month) =>
+                  new Date(month.getFullYear(), month.getMonth() + 1, 1)
+                )}
+              >
+                <Text style={styles.anyDateNavText}>›</Text>
+              </Pressable>
+            </View>
+            <View style={styles.anyDateGrid}>
+              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((weekday) => (
+                <View key={weekday} style={styles.anyDateCell}>
+                  <Text style={styles.anyDateWeekday}>{weekday}</Text>
+                </View>
+              ))}
+              {anyDateMonthCells(calendarMonth).map((day, index) => {
+                if (!day) {
+                  return <View key={`empty-${index}`} style={styles.anyDateCell} />;
+                }
+                const key = anyDateKey(day);
+                const selected = dueAt === key;
+                const today = anyDateKey(new Date()) === key;
+                return (
+                  <Pressable
+                    key={key}
+                    style={[
+                      styles.anyDateCell,
+                      styles.anyDateDay,
+                      selected && styles.anyDateDaySelected,
+                    ]}
+                    onPress={() => {
+                      setDueAt(key);
+                      setShowDatePicker(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.anyDateDayText,
+                        selected && styles.anyDateDayTextSelected,
+                        today && !selected && styles.anyDateTodayText,
+                      ]}
+                    >
+                      {day.getDate()}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
+        <Text style={styles.label}>Приоритет</Text>
+        <View style={styles.priorities}>
+          {([
+            ['low', 'Низкий'],
+            ['medium', 'Средний'],
+            ['high', 'Высокий'],
+          ] as const).map(([value, label]) => (
+            <Pressable
+              key={value}
+              onPress={() => setPriority(value)}
+              style={[
+                styles.priorityButton,
+                priority === value && styles.prioritySelected,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.priorityText,
+                  priority === value && styles.priorityTextSelected,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable style={styles.addButton} onPress={addTask}>
+          <Text style={styles.addButtonText}>+ Добавить задачу</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.progressCard}>
+        <View style={styles.progressTop}>
+          <View>
+            <Text style={styles.progressTitle}>Ваш прогресс</Text>
+            <Text style={styles.progressSubtitle}>
+              {completedCount} из {tasks.length} задач выполнено
+            </Text>
+          </View>
+          <Text style={styles.progressPercent}>
+            {Math.round(progress * 100)}%
+          </Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View
+            style={[styles.progressFill, { width: `${progress * 100}%` }]}
+          />
+        </View>
+        <View style={styles.progressStats}>
+          <Text style={styles.statText}>● {activeCount} активных</Text>
+          <Text style={styles.statDone}>● {completedCount} выполнено</Text>
+        </View>
+      </View>
+
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle}>Мои задачи</Text>
+        <Text style={styles.counter}>{visibleTasks.length}</Text>
+      </View>
+
+      <View style={styles.filters}>
+        {([
+          ['all', 'Все'],
+          ['active', 'Активные'],
+          ['completed', 'Выполненные'],
+        ] as const).map(([value, label]) => (
+          <Pressable
+            key={value}
+            onPress={() => setFilter(value)}
+            style={[
+              styles.filterButton,
+              filter === value && styles.filterButtonActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                filter === value && styles.filterTextActive,
+              ]}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#6B5CE7" />
+      ) : tasks.length === 0 ? (
+        <Text style={styles.empty}>Задач пока нет — добавьте первую выше.</Text>
+      ) : visibleTasks.length === 0 ? (
+        <Text style={styles.empty}>
+          {filter === 'active'
+            ? 'Активных задач нет. Отличная работа!'
+            : 'Выполненных задач пока нет.'}
+        </Text>
+      ) : (
+        visibleTasks.map((task) => (
+          <View key={task.id} style={styles.taskCard}>
+            <Pressable
+              onPress={() => toggleTask(task)}
+              style={styles.taskRow}
+            >
+              <View
+                style={[
+                  styles.checkbox,
+                  task.completed && styles.checkboxDone,
+                ]}
+              >
+                <Text style={styles.checkmark}>
+                  {task.completed ? '✓' : ''}
+                </Text>
+              </View>
+              <View style={styles.taskBody}>
+                <Text
+                  style={[
+                    styles.taskTitle,
+                    task.completed && styles.completedTitle,
+                  ]}
+                >
+                  {task.title}
+                </Text>
+                {task.description ? (
+                  <Text style={styles.taskDescription}>
+                    {task.description}
+                  </Text>
+                ) : null}
+                <View style={styles.metaRow}>
+                  <Text
+                    style={[
+                      styles.priorityBadge,
+                      task.priority === 'high' && styles.priorityHigh,
+                      task.priority === 'medium' && styles.priorityMedium,
+                      task.priority === 'low' && styles.priorityLow,
+                    ]}
+                  >
+                    {task.priority === 'high'
+                      ? 'Высокий приоритет'
+                      : task.priority === 'low'
+                        ? 'Низкий приоритет'
+                        : 'Средний приоритет'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.statusBadge,
+                      task.completed && styles.statusDone,
+                    ]}
+                  >
+                    {task.completed ? '✓ Выполнена' : 'В процессе'}
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => deleteTask(task.id)}
+              style={styles.deleteButton}
+            >
+              <Text style={styles.deleteText}>Удалить</Text>
+            </Pressable>
+          </View>
+        ))
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  progressCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E9EAF3',
+    borderRadius: 18,
+    padding: 18,
+    marginTop: 4,
+  },
+  progressTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  progressTitle: {
+    color: '#29283F',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  progressSubtitle: {
+    color: '#85869A',
+    fontSize: 13,
+    marginTop: 5,
+  },
+  progressPercent: {
+    color: '#6B5CE7',
+    fontSize: 25,
+    fontWeight: '800',
+  },
+  progressTrack: {
+    height: 8,
+    backgroundColor: '#ECEBFA',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginTop: 17,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#6B5CE7',
+    borderRadius: 8,
+  },
+  progressStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  statText: {
+    color: '#77798D',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statDone: {
+    color: '#25855A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filters: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: -4,
+    marginBottom: 2,
+  },
+  filterButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E6F0',
+    borderRadius: 11,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  filterButtonActive: {
+    backgroundColor: '#6B5CE7',
+    borderColor: '#6B5CE7',
+  },
+  filterText: {
+    color: '#77798D',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterTextActive: {
+    color: '#FFFFFF',
+  },
+
+  page: {
+    width: '100%',
+    maxWidth: 900,
+    alignSelf: 'center',
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 48,
+    gap: 16,
+    backgroundColor: '#F6F7FC',
+    minHeight: '100%',
+  },
+  eyebrow: {
+    color: '#7467F0',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  heading: {
+    color: '#24233A',
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+  },
+  subtitle: {
+    color: '#77798D',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  error: {
+    color: '#B4233C',
+    padding: 14,
+    backgroundColor: '#FFF0F1',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FFD9DE',
+  },
+  form: {
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    gap: 13,
+    borderWidth: 1,
+    borderColor: '#E9EAF3',
+  },
+  formTitle: {
+    fontSize: 19,
+    color: '#24233A',
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  input: {
+    backgroundColor: '#F8F9FD',
+    borderWidth: 1,
+    borderColor: '#E6E8F1',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    color: '#24233A',
+    fontSize: 15,
+  },
+  description: {
+    minHeight: 82,
+    textAlignVertical: 'top',
+  },
+  label: {
+    color: '#484A60',
+    fontWeight: '700',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  priorities: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dateSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F6F5FF',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  dateSummaryIcon: {
+    fontSize: 18,
+  },
+  dateSummaryText: {
+    color: '#514A83',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dateButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 18,
+  },
+  dateButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E7E6F1',
+    backgroundColor: '#FFFFFF',
+  },
+  dateButtonSelected: {
+    backgroundColor: '#EAE7FF',
+    borderColor: '#6B5CE7',
+  },
+  dateButtonText: {
+    color: '#77788F',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  dateButtonTextSelected: {
+    color: '#6B5CE7',
+  },
+  dateQuickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dateQuickButton: {
+    backgroundColor: '#F4F4F8',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  dateQuickText: {
+    color: '#55566A',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  anyDateToggle: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#6B5CE7',
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    marginBottom: 10,
+  },
+  anyDateToggleText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  anyDateCalendar: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E9EAF3',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 16,
+  },
+  anyDateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  anyDateNav: {
+    width: 38,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: '#F4F2FF',
+  },
+  anyDateNavText: {
+    color: '#6B5CE7',
+    fontSize: 27,
+    lineHeight: 30,
+  },
+  anyDateMonth: {
+    color: '#24243A',
+    fontSize: 15,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  anyDateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  anyDateCell: {
+    width: '14.2857%',
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  anyDateWeekday: {
+    color: '#9293A7',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  anyDateDay: {
+    borderRadius: 19,
+  },
+  anyDateDaySelected: {
+    backgroundColor: '#6B5CE7',
+  },
+  anyDateDayText: {
+    color: '#29293D',
+    fontSize: 14,
+  },
+  anyDateDayTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  anyDateTodayText: {
+    color: '#6B5CE7',
+    fontWeight: '800',
+  },
+  priorityButton: {
+    borderWidth: 1,
+    borderColor: '#E3E5EF',
+    backgroundColor: '#F8F9FC',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  prioritySelected: {
+    backgroundColor: '#EEECFF',
+    borderColor: '#7568F3',
+  },
+  priorityText: {
+    color: '#5C6074',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  priorityTextSelected: {
+    color: '#5E50D8',
+    fontWeight: '800',
+  },
+  addButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    backgroundColor: '#6B5CE7',
+    paddingVertical: 15,
+    paddingHorizontal: 18,
+    borderRadius: 13,
+    marginTop: 5,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+    marginBottom: 2,
+  },
+  listTitle: {
+    fontSize: 22,
+    color: '#24233A',
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  counter: {
+    backgroundColor: '#EAE8FF',
+    color: '#6254D6',
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 12,
+    overflow: 'hidden',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  empty: {
+    color: '#77798D',
+    paddingVertical: 26,
+    paddingHorizontal: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  taskCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#E9EAF3',
+    padding: 17,
+    gap: 13,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#C8CAD9',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxDone: {
+    backgroundColor: '#6B5CE7',
+    borderColor: '#6B5CE7',
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  taskBody: {
+    flex: 1,
+    gap: 7,
+  },
+  taskTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#29283F',
+    fontWeight: '700',
+  },
+  completedTitle: {
+    textDecorationLine: 'line-through',
+    color: '#9699AA',
+  },
+  taskDescription: {
+    color: '#77798D',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 4,
+  },
+  priorityBadge: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  priorityHigh: {
+    backgroundColor: '#FFF0F0',
+    color: '#C2414D',
+  },
+  priorityMedium: {
+    backgroundColor: '#F0EEFF',
+    color: '#6254D6',
+  },
+  priorityLow: {
+    backgroundColor: '#EAF7F0',
+    color: '#277A50',
+  },
+  statusBadge: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    backgroundColor: '#F1F2F7',
+    color: '#666A7D',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  statusDone: {
+    backgroundColor: '#E7F7ED',
+    color: '#277A50',
+  },
+  deleteButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+    backgroundColor: '#FFF2F2',
+  },
+  deleteText: {
+    color: '#BD4050',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+});
