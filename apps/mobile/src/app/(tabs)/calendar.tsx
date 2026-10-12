@@ -427,6 +427,9 @@ export default function CalendarScreen() {
                 onPress={() => setSelectedDay(key)}
                 style={[
                   styles.dayCell,
+                  viewMode === 'month' && styles.monthDayCell,
+                  viewMode === 'month' && isToday && styles.monthDayCellToday,
+                  viewMode === 'month' && isToday && isSelected && styles.monthDayCellTodaySelected,
                   viewMode === 'day' && styles.singleDayCell,
                   viewMode !== 'month' && styles.weekDayCell,
                   viewMode !== 'month' && isSelected && styles.weekDayCellSelected,
@@ -445,6 +448,7 @@ export default function CalendarScreen() {
                 <View
                   style={[
                     styles.dayNumberWrap,
+                    viewMode === 'month' && styles.monthDayNumberWrap,
                     isSelected && styles.selectedDay,
                     isToday && !isSelected && styles.todayDay,
                   ]}
@@ -461,9 +465,9 @@ export default function CalendarScreen() {
                   </Text>
                 </View>
 
-                <View style={styles.dayTaskPills}>
+                <View style={[styles.dayTaskPills, viewMode === 'month' && styles.monthDayTaskPills]}>
                   {dayTasks
-                    .slice(0, viewMode === 'month' ? 2 : 3)
+                    .slice(0, viewMode === 'month' ? 3 : 3)
                     .map((task) => {
                       const pillStyle = task.completed
                         ? styles.dayTaskPillDone
@@ -485,20 +489,20 @@ export default function CalendarScreen() {
                         <Pressable
                           key={task.id}
                           onPress={() => setSelectedDay(key)}
-                          style={[styles.dayTaskPill, pillStyle]}
+                          style={[styles.dayTaskPill, viewMode === 'month' && styles.monthDayTaskPill, pillStyle]}
                         >
                           <Text
                             numberOfLines={1}
-                            style={[styles.dayTaskText, textStyle]}
+                            style={[styles.dayTaskText, viewMode === 'month' && styles.monthDayTaskText, textStyle]}
                           >
                             {task.title}
                           </Text>
                         </Pressable>
                       );
                     })}
-                  {dayTasks.length > (viewMode === 'month' ? 2 : 3) && (
+                  {dayTasks.length > (viewMode === 'month' ? 3 : 3) && (
                     <Text style={styles.moreTasksText}>
-                      +{dayTasks.length - (viewMode === 'month' ? 2 : 3)}
+                      +{dayTasks.length - (viewMode === 'month' ? 3 : 3)}
                     </Text>
                   )}
                 </View>
@@ -760,6 +764,45 @@ const styles = StyleSheet.create({
   timelineBlockTime: { fontSize: 8, marginTop: 2 },
   timelineHint: {
     padding: 10, color: '#9293A7', fontSize: 10, lineHeight: 15,
+  },
+  monthDayCell: {
+    height: 126,
+    minHeight: 126,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 3,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#E7E8F1',
+    borderRadius: 7,
+    backgroundColor: '#FFFFFF',
+  },
+  monthDayCellToday: {
+    backgroundColor: 'rgba(107, 92, 231, 0.14)',
+    borderColor: 'rgba(107, 92, 231, 0.40)',
+  },
+  monthDayCellTodaySelected: {
+    backgroundColor: 'rgba(107, 92, 231, 0.06)',
+    borderColor: 'rgba(107, 92, 231, 0.25)',
+  },
+  monthDayNumberWrap: {
+    width: 25,
+    height: 25,
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  monthDayTaskPills: {
+    marginTop: 4,
+    gap: 3,
+  },
+  monthDayTaskPill: {
+    borderRadius: 3,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
+  monthDayTaskText: {
+    fontSize: 8,
+    lineHeight: 10,
   },
   dayCell: {
     width: '14.2857%', alignItems: 'center',

@@ -218,7 +218,6 @@ export default function TasksScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   const completedCount = tasks.filter((task) => task.completed).length;
   const activeCount = tasks.length - completedCount;
@@ -246,44 +245,7 @@ export default function TasksScreen() {
     loadTasks();
   }, [loadTasks]);
 
-  function editTask(task: Task) {
-    setEditingTaskId(task.id);
-    setTitle(task.title);
-    setDescription(task.description);
-    setPriority(task.priority);
-    setDueAt(task.dueAt ? anyDateKey(new Date(task.dueAt)) : null);
-
-    setScheduleEnabled(Boolean(task.startAt || task.endAt));
-    setStartTime(
-      task.startAt
-        ? `${String(new Date(task.startAt).getHours()).padStart(2, '0')}:${String(new Date(task.startAt).getMinutes()).padStart(2, '0')}`
-        : '09:00'
-    );
-    setEndTime(
-      task.endAt
-        ? `${String(new Date(task.endAt).getHours()).padStart(2, '0')}:${String(new Date(task.endAt).getMinutes()).padStart(2, '0')}`
-        : '10:00'
-    );
-
-    setShowDatePicker(false);
-    setCalendarMonth(task.dueAt ? new Date(task.dueAt) : new Date());
-    setError('');
-  }
-
-  function resetTaskForm() {
-    setEditingTaskId(null);
-    setTitle('');
-    setDescription('');
-    setPriority('medium');
-    setDueAt(null);
-    setScheduleEnabled(false);
-    setStartTime('09:00');
-    setEndTime('10:00');
-    setShowDatePicker(false);
-    setError('');
-  }
-
-  async function saveTask() {
+  async function addTask() {
     if (!title.trim()) {
       setError('Введите название задачи.');
       return;
@@ -291,10 +253,8 @@ export default function TasksScreen() {
 
     try {
       setError('');
-      const response = await fetch(
-        `${API_URL}/tasks${editingTaskId ? `/${editingTaskId}` : ''}`,
-        {
-        method: editingTaskId ? 'PATCH' : 'POST',
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
@@ -313,7 +273,13 @@ export default function TasksScreen() {
       });
       if (!response.ok) throw new Error();
 
-      resetTaskForm();
+      setTitle('');
+      setDescription('');
+      setPriority('medium');
+      setDueAt(null);
+      setScheduleEnabled(false);
+      setStartTime('09:00');
+      setEndTime('10:00');
       await loadTasks();
     } catch {
       setError('Не удалось сохранить задачу.');
@@ -357,9 +323,7 @@ export default function TasksScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.form}>
-        <Text style={styles.formTitle}>
-          {editingTaskId ? 'Редактирование задачи' : 'Новая задача'}
-        </Text>
+        <Text style={styles.formTitle}>Новая задача</Text>
         <TextInput
           value={title}
           onChangeText={setTitle}
@@ -466,11 +430,24 @@ export default function TasksScreen() {
               ))}
               {anyDateMonthCells(calendarMonth).map((day, index) => {
                 if (!day) {
-                  return <View key={`empty-${index}`} style={styles.anyDateCell} />;
+                  return (
+                    <View
+                      key={`empty-${index}`}
+                      style={[styles.anyDateCell, styles.anyDateEmptyDay]}
+                    />
+                  );
                 }
+
                 const key = anyDateKey(day);
                 const selected = dueAt === key;
                 const today = anyDateKey(new Date()) === key;
+                const dayTasks = tasks.filter((task) => {
+                  if (!task.dueAt) return false;
+                  const taskDate = new Date(task.dueAt);
+                  if (Number.isNaN(taskDate.getTime())) return false;
+                  return anyDateKey(taskDate) === key;
+                });
+
                 return (
                   <Pressable
                     key={key}
@@ -493,6 +470,32 @@ export default function TasksScreen() {
                     >
                       {day.getDate()}
                     </Text>
+                    <View style={styles.anyDateTaskCell}>
+                      {dayTasks.slice(0, 3).map((task) => (
+                        <Text
+                          key={task.id}
+                          numberOfLines={1}
+                          style={[
+                            styles.anyDateTaskText,
+                            selected && styles.anyDateTaskTextSelected,
+                            task.completed && styles.anyDateTaskTextCompleted,
+                          ]}
+                        >
+                          {task.title}
+                        </Text>
+                      ))}
+                      {dayTasks.length > 3 && (
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.anyDateTaskText,
+                            selected && styles.anyDateTaskTextSelected,
+                          ]}
+                        >
+                          +{dayTasks.length - 3}
+                        </Text>
+                      )}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -526,19 +529,9 @@ export default function TasksScreen() {
           ))}
         </View>
 
-        <Pressable style={styles.addButton} onPress={saveTask}>
-          <Text style={styles.addButtonText}>
-            {editingTaskId ? 'Сохранить изменения' : '+ Добавить задачу'}
-          </Text>
+        <Pressable style={styles.addButton} onPress={addTask}>
+          <Text style={styles.addButtonText}>+ Добавить задачу</Text>
         </Pressable>
-        {editingTaskId && (
-          <Pressable
-            style={styles.dateQuickButton}
-            onPress={resetTaskForm}
-          >
-            <Text style={styles.dateQuickText}>Отмена</Text>
-          </Pressable>
-        )}
       </View>
 
       <View style={styles.progressCard}>
@@ -661,12 +654,6 @@ export default function TasksScreen() {
                   </Text>
                 </View>
               </View>
-            </Pressable>
-            <Pressable
-              onPress={() => editTask(task)}
-              style={styles.dateQuickButton}
-            >
-              <Text style={styles.dateQuickText}>Редактировать</Text>
             </Pressable>
             <Pressable
               onPress={() => deleteTask(task.id)}
@@ -833,9 +820,9 @@ wheelItem: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E6F0',
-    borderRadius: 11,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 9,
   },
   filterButtonActive: {
     backgroundColor: '#6B5CE7',
@@ -854,11 +841,11 @@ wheelItem: {
     width: '100%',
     maxWidth: 900,
     alignSelf: 'center',
-    paddingHorizontal: 22,
-    paddingTop: 28,
+    paddingHorizontal: 18,
+    paddingTop: 24,
     paddingBottom: 48,
-    gap: 16,
-    backgroundColor: '#F6F7FC',
+    gap: 14,
+    backgroundColor: '#F8F9FD',
     minHeight: '100%',
   },
   eyebrow: {
@@ -869,7 +856,7 @@ wheelItem: {
   },
   heading: {
     color: '#24233A',
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '800',
     letterSpacing: -0.7,
   },
@@ -889,12 +876,12 @@ wheelItem: {
     borderColor: '#FFD9DE',
   },
   form: {
-    padding: 20,
+    padding: 18,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    gap: 13,
+    borderRadius: 18,
+    gap: 14,
     borderWidth: 1,
-    borderColor: '#E9EAF3',
+    borderColor: '#E6E8F0',
   },
   formTitle: {
     fontSize: 19,
@@ -903,10 +890,10 @@ wheelItem: {
     marginBottom: 3,
   },
   input: {
-    backgroundColor: '#F8F9FD',
+    backgroundColor: '#FAFAFE',
     borderWidth: 1,
-    borderColor: '#E6E8F1',
-    borderRadius: 12,
+    borderColor: '#E3E5EF',
+    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 13,
     color: '#24233A',
@@ -1052,7 +1039,36 @@ wheelItem: {
     fontWeight: '700',
   },
   anyDateDay: {
-    borderRadius: 19,
+    minHeight: 78,
+    height: 78,
+    justifyContent: 'flex-start',
+    paddingTop: 5,
+    paddingHorizontal: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  anyDateEmptyDay: {
+    height: 78,
+  },
+  anyDateTaskCell: {
+    width: '100%',
+    paddingHorizontal: 1,
+    marginTop: 2,
+    gap: 1,
+  },
+  anyDateTaskText: {
+    width: '100%',
+    color: '#5F5B80',
+    fontSize: 8,
+    lineHeight: 10,
+    textAlign: 'left',
+  },
+  anyDateTaskTextSelected: {
+    color: '#FFFFFF',
+  },
+  anyDateTaskTextCompleted: {
+    color: '#9A98A8',
+    textDecorationLine: 'line-through',
   },
   anyDateDaySelected: {
     backgroundColor: '#6B5CE7',
@@ -1094,9 +1110,9 @@ wheelItem: {
     alignSelf: 'stretch',
     alignItems: 'center',
     backgroundColor: '#6B5CE7',
-    paddingVertical: 15,
+    paddingVertical: 16,
     paddingHorizontal: 18,
-    borderRadius: 13,
+    borderRadius: 14,
     marginTop: 5,
   },
   addButtonText: {
@@ -1112,7 +1128,7 @@ wheelItem: {
     marginBottom: 2,
   },
   listTitle: {
-    fontSize: 22,
+    fontSize: 21,
     color: '#24233A',
     fontWeight: '800',
     letterSpacing: -0.3,
@@ -1129,21 +1145,21 @@ wheelItem: {
   },
   empty: {
     color: '#77798D',
-    paddingVertical: 26,
+    paddingVertical: 28,
     paddingHorizontal: 18,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: '#FCFCFF',
+    borderRadius: 18,
     overflow: 'hidden',
     textAlign: 'center',
     lineHeight: 22,
   },
   taskCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 17,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E9EAF3',
-    padding: 17,
-    gap: 13,
+    borderColor: '#E6E8F0',
+    padding: 16,
+    gap: 12,
   },
   taskRow: {
     flexDirection: 'row',
@@ -1175,7 +1191,7 @@ wheelItem: {
   },
   taskTitle: {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 23,
     color: '#29283F',
     fontWeight: '700',
   },
@@ -1233,8 +1249,8 @@ wheelItem: {
     alignSelf: 'flex-end',
     paddingHorizontal: 10,
     paddingVertical: 7,
-    borderRadius: 9,
-    backgroundColor: '#FFF2F2',
+    borderRadius: 10,
+    backgroundColor: '#FFF5F5',
   },
   deleteText: {
     color: '#BD4050',
