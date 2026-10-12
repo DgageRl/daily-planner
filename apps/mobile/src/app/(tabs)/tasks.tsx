@@ -20,12 +20,33 @@ type Task = {
   dueAt: string | null;
 };
 
+function anyDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function anyDateMonthCells(month: Date): (Date | null)[] {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const offset = (first.getDay() + 6) % 7;
+  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const cells: (Date | null)[] = Array(offset).fill(null);
+  for (let day = 1; day <= count; day++) {
+    cells.push(new Date(month.getFullYear(), month.getMonth(), day));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 export default function TasksScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [dueAt, setDueAt] = useState<string | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
 
   function dateString(offset: number) {
     const date = new Date();
@@ -163,62 +184,105 @@ export default function TasksScreen() {
 
         <Text style={styles.label}>Дата выполнения</Text>
         <View style={styles.dateSummary}>
-          <Text style={styles.dateSummaryIcon}>📅</Text>
           <Text style={styles.dateSummaryText}>
-            {formatDueDate(dueAt)}
+            {dueAt ? `📅 ${formatDueDate(dueAt)}` : '📅 Дата не выбрана'}
           </Text>
         </View>
-        <View style={styles.dateButtons}>
+        <View style={styles.dateQuickActions}>
           <Pressable
-            onPress={() => setDueAt(dateString(0))}
-            style={[
-              styles.dateButton,
-              dueAt === dateString(0) && styles.dateButtonSelected,
-            ]}
+            style={styles.dateQuickButton}
+            onPress={() => { setDueAt(dateString(0)); setShowDatePicker(false); }}
           >
-            <Text
-              style={[
-                styles.dateButtonText,
-                dueAt === dateString(0) && styles.dateButtonTextSelected,
-              ]}
-            >
-              Сегодня
-            </Text>
+            <Text style={styles.dateQuickText}>Сегодня</Text>
           </Pressable>
           <Pressable
-            onPress={() => setDueAt(dateString(1))}
-            style={[
-              styles.dateButton,
-              dueAt === dateString(1) && styles.dateButtonSelected,
-            ]}
+            style={styles.dateQuickButton}
+            onPress={() => { setDueAt(dateString(1)); setShowDatePicker(false); }}
           >
-            <Text
-              style={[
-                styles.dateButtonText,
-                dueAt === dateString(1) && styles.dateButtonTextSelected,
-              ]}
-            >
-              Завтра
-            </Text>
+            <Text style={styles.dateQuickText}>Завтра</Text>
           </Pressable>
           <Pressable
-            onPress={() => setDueAt(null)}
-            style={[
-              styles.dateButton,
-              dueAt === null && styles.dateButtonSelected,
-            ]}
+            style={styles.dateQuickButton}
+            onPress={() => { setDueAt(null); setShowDatePicker(false); }}
           >
-            <Text
-              style={[
-                styles.dateButtonText,
-                dueAt === null && styles.dateButtonTextSelected,
-              ]}
-            >
-              Без даты
-            </Text>
+            <Text style={styles.dateQuickText}>Без даты</Text>
           </Pressable>
         </View>
-
+        <Pressable
+          style={styles.anyDateToggle}
+          onPress={() => setShowDatePicker((value) => !value)}
+        >
+          <Text style={styles.anyDateToggleText}>
+            {showDatePicker ? 'Закрыть календарь ▲' : 'Выбрать другую дату ▾'}
+          </Text>
+        </Pressable>
+        {showDatePicker && (
+          <View style={styles.anyDateCalendar}>
+            <View style={styles.anyDateHeader}>
+              <Pressable
+                style={styles.anyDateNav}
+                onPress={() => setCalendarMonth((month) =>
+                  new Date(month.getFullYear(), month.getMonth() - 1, 1)
+                )}
+              >
+                <Text style={styles.anyDateNavText}>‹</Text>
+              </Pressable>
+              <Text style={styles.anyDateMonth}>
+                {calendarMonth.toLocaleDateString('ru-RU', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </Text>
+              <Pressable
+                style={styles.anyDateNav}
+                onPress={() => setCalendarMonth((month) =>
+                  new Date(month.getFullYear(), month.getMonth() + 1, 1)
+                )}
+              >
+                <Text style={styles.anyDateNavText}>›</Text>
+              </Pressable>
+            </View>
+            <View style={styles.anyDateGrid}>
+              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((weekday) => (
+                <View key={weekday} style={styles.anyDateCell}>
+                  <Text style={styles.anyDateWeekday}>{weekday}</Text>
+                </View>
+              ))}
+              {anyDateMonthCells(calendarMonth).map((day, index) => {
+                if (!day) {
+                  return <View key={`empty-${index}`} style={styles.anyDateCell} />;
+                }
+                const key = anyDateKey(day);
+                const selected = dueAt === key;
+                const today = anyDateKey(new Date()) === key;
+                return (
+                  <Pressable
+                    key={key}
+                    style={[
+                      styles.anyDateCell,
+                      styles.anyDateDay,
+                      selected && styles.anyDateDaySelected,
+                    ]}
+                    onPress={() => {
+                      setDueAt(key);
+                      setShowDatePicker(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.anyDateDayText,
+                        selected && styles.anyDateDayTextSelected,
+                        today && !selected && styles.anyDateTodayText,
+                      ]}
+                    >
+                      {day.getDate()}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
         <Text style={styles.label}>Приоритет</Text>
         <View style={styles.priorities}>
           {([
@@ -595,6 +659,102 @@ const styles = StyleSheet.create({
   dateButtonTextSelected: {
     color: '#6B5CE7',
   },
+  dateQuickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dateQuickButton: {
+    backgroundColor: '#F4F4F8',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  dateQuickText: {
+    color: '#55566A',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  anyDateToggle: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#6B5CE7',
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    marginBottom: 10,
+  },
+  anyDateToggleText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  anyDateCalendar: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E9EAF3',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 16,
+  },
+  anyDateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  anyDateNav: {
+    width: 38,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: '#F4F2FF',
+  },
+  anyDateNavText: {
+    color: '#6B5CE7',
+    fontSize: 27,
+    lineHeight: 30,
+  },
+  anyDateMonth: {
+    color: '#24243A',
+    fontSize: 15,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  anyDateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  anyDateCell: {
+    width: '14.2857%',
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  anyDateWeekday: {
+    color: '#9293A7',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  anyDateDay: {
+    borderRadius: 19,
+  },
+  anyDateDaySelected: {
+    backgroundColor: '#6B5CE7',
+  },
+  anyDateDayText: {
+    color: '#29293D',
+    fontSize: 14,
+  },
+  anyDateDayTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  anyDateTodayText: {
+    color: '#6B5CE7',
+    fontWeight: '800',
+  },
   priorityButton: {
     borderWidth: 1,
     borderColor: '#E3E5EF',
@@ -703,7 +863,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     color: '#29283F',
-    fontWeight: '750',
+    fontWeight: '700',
   },
   completedTitle: {
     textDecorationLine: 'line-through',

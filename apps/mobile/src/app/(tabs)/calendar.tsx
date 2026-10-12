@@ -21,6 +21,7 @@ type Task = {
 };
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+type CalendarView = 'month' | 'week' | 'day';
 
 const MONTHS = [
   'Январь', 'Февраль', 'Март', 'Апрель',
@@ -56,6 +57,7 @@ export default function CalendarScreen() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
+  const [viewMode, setViewMode] = useState<CalendarView>('month');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -112,6 +114,34 @@ export default function CalendarScreen() {
     });
   }, [month]);
 
+  const visibleCalendarDays = useMemo(() => {
+    if (viewMode === 'month') return calendarDays;
+
+    const selected = new Date(`${selectedDay}T12:00:00`);
+
+    if (viewMode === 'day') {
+      return [new Date(
+        selected.getFullYear(),
+        selected.getMonth(),
+        selected.getDate()
+      )];
+    }
+
+    const offset = (selected.getDay() + 6) % 7;
+    const weekStart = new Date(
+      selected.getFullYear(),
+      selected.getMonth(),
+      selected.getDate() - offset
+    );
+    const weekEnd = new Date(
+      weekStart.getFullYear(),
+      weekStart.getMonth(),
+      weekStart.getDate() + 6
+    );
+
+    return calendarDays.filter((day) => day >= weekStart && day <= weekEnd);
+  }, [calendarDays, selectedDay, viewMode]);
+
   const tasksByDate = useMemo(() => {
     const grouped: Record<string, Task[]> = {};
 
@@ -128,14 +158,22 @@ export default function CalendarScreen() {
   const selectedTasks = tasksByDate[selectedDay] ?? [];
   const todayKey = dateKey(new Date());
 
-  function changeMonth(amount: number) {
-    const next = new Date(
-      month.getFullYear(),
-      month.getMonth() + amount,
-      1
-    );
-    setMonth(next);
+  function changePeriod(amount: number) {
+    if (viewMode === 'month') {
+      const next = new Date(
+        month.getFullYear(),
+        month.getMonth() + amount,
+        1
+      );
+      setMonth(next);
+      setSelectedDay(dateKey(next));
+      return;
+    }
+
+    const next = new Date(`${selectedDay}T12:00:00`);
+    next.setDate(next.getDate() + amount * (viewMode === 'week' ? 7 : 1));
     setSelectedDay(dateKey(next));
+    setMonth(new Date(next.getFullYear(), next.getMonth(), 1));
   }
 
   return (
@@ -157,10 +195,35 @@ export default function CalendarScreen() {
       </View>
 
       <View style={styles.monthCard}>
+        <View style={styles.viewSwitcher}>
+          {([
+            ['week', 'Неделя'],
+            ['month', 'Месяц'],
+          ] as const).map(([mode, label]) => (
+            <Pressable
+              key={mode}
+              onPress={() => setViewMode(mode)}
+              style={[
+                styles.viewOption,
+                viewMode === mode && styles.viewOptionActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.viewOptionText,
+                  viewMode === mode && styles.viewOptionTextActive,
+                ]}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         <View style={styles.monthHeader}>
           <Pressable
-            accessibilityLabel="Предыдущий месяц"
-            onPress={() => changeMonth(-1)}
+            accessibilityLabel="Предыдущий период"
+            onPress={() => changePeriod(-1)}
             style={styles.arrowButton}
           >
             <Text style={styles.arrow}>‹</Text>
@@ -168,14 +231,25 @@ export default function CalendarScreen() {
 
           <View style={styles.monthTitleWrap}>
             <Text style={styles.monthTitle}>
-              {MONTHS[month.getMonth()]}
+              {viewMode === 'month'
+                ? MONTHS[month.getMonth()]
+                : viewMode === 'week'
+                  ? 'Неделя'
+                  : 'Выбранный день'}
             </Text>
-            <Text style={styles.year}>{month.getFullYear()}</Text>
+            <Text style={styles.year}>
+              {viewMode === 'month'
+                ? month.getFullYear()
+                : new Date(`${selectedDay}T12:00:00`).toLocaleDateString(
+                    'ru-RU',
+                    { day: 'numeric', month: 'long', year: 'numeric' }
+                  )}
+            </Text>
           </View>
 
           <Pressable
-            accessibilityLabel="Следующий месяц"
-            onPress={() => changeMonth(1)}
+            accessibilityLabel="Следующий период"
+            onPress={() => changePeriod(1)}
             style={styles.arrowButton}
           >
             <Text style={styles.arrow}>›</Text>
@@ -193,16 +267,18 @@ export default function CalendarScreen() {
           <Text style={styles.todayButtonText}>Сегодня</Text>
         </Pressable>
 
-        <View style={styles.weekRow}>
-          {WEEKDAYS.map((day) => (
-            <View key={day} style={styles.weekCell}>
-              <Text style={styles.weekText}>{day}</Text>
-            </View>
-          ))}
-        </View>
+        {viewMode !== 'day' && (
+          <View style={styles.weekRow}>
+            {WEEKDAYS.map((day) => (
+              <View key={day} style={styles.weekCell}>
+                <Text style={styles.weekText}>{day}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.daysGrid}>
-          {calendarDays.map((day) => {
+          {visibleCalendarDays.map((day) => {
             const key = dateKey(day);
             const inMonth = sameMonth(day, month);
             const isSelected = key === selectedDay;
@@ -215,7 +291,10 @@ export default function CalendarScreen() {
               <Pressable
                 key={key}
                 onPress={() => setSelectedDay(key)}
-                style={styles.dayCell}
+                style={[
+                  styles.dayCell,
+                  viewMode === 'day' && styles.singleDayCell,
+                ]}
               >
                 <View
                   style={[
@@ -411,6 +490,32 @@ const styles = StyleSheet.create({
     padding: 16, borderWidth: 1, borderColor: '#ECECF5',
     marginBottom: 26,
   },
+  viewSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F2FA',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 18,
+    gap: 4,
+  },
+  viewOption: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 11,
+  },
+  viewOptionActive: {
+    backgroundColor: '#6B5CE7',
+  },
+  viewOptionText: {
+    color: '#77778E',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  viewOptionTextActive: {
+    color: '#FFFFFF',
+  },
   monthHeader: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 12,
@@ -436,6 +541,11 @@ const styles = StyleSheet.create({
   dayCell: {
     width: '14.2857%', alignItems: 'center',
     paddingVertical: 3, minHeight: 49,
+  },
+  singleDayCell: {
+    width: '100%',
+    paddingVertical: 12,
+    minHeight: 64,
   },
   dayNumberWrap: {
     width: 34, height: 34, borderRadius: 12,
