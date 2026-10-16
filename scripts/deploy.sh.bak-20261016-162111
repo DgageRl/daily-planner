@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+MODE="${1:-}"
+LOCK_FILE="/tmp/daily-planner-deploy.lock"
+
+API_UPSTREAM="infra/nginx/upstream/active.conf"
+WEB_UPSTREAM="infra/nginx/web-upstream/active.conf"
+
+API_URL="http://localhost:3000/health"
+WEB_URL="http://localhost:8081/"
+
+log() {
+  printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"
+}
+
+die() {
+  log "ERROR: $*"
+  exit 1
+}
+
+usage() {
+  echo "Usage: $0 {api|web|all}"
+  exit 2
+}
+
+[[ "$MODE" == "api" || "$MODE" == "web" || "$MODE" == "all" ]] || usage
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || die "Another deployment is running."
+
+require_file() {
+  [[ -f "$1" ]] || die "Required file not found: $1"
+}
+
+active_slot() {
+  local file="$1"
+  local service_prefix="$2"
+  local line
+
+  line="$(grep -E '^[[:space:]]*server[[:space:]]+' "$file" | head -n 1 || true)"
+
+  if [[ "$line" =~ server[[:space:]]+${service_prefix}-blue: ]]; then
+    echo blue
+  elif [[ "$line" =~ server[[:space:]]+${service_prefix}-green: ]]; then
+    echo green
+  else
+    die "Cannot determine active slot from $file: $line"
+  fi
+}
+
+wait_http() {
+  local url="$1"
+  local attempts="${2:-30}"
+  local i
+
+  for ((i=1; i<=attempts; i++)); do
+    if curl --silent --show-error --fail --max-time 3 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
+deploy_one() {
+  local kind="$1"
+  local upstream_file active target service proxy_container test_url backup
+  local previous_line
+
+  if [[ "$kind" == "api" ]]; then
+    upstream_file="$API_UPSTREAM"
+    service_prefix="api"
+    proxy_container="nginx"
+    test_url="$API_URL"
+  else
+    upstream_file="$WEB_UPSTREAM"
+    service_prefix="web"
+    proxy_container="web"
+    test_url="$WEB_URL"
+  fi
+
+  require_file "$upstream_file"
+
+  active="$(active_slot "$upstream_file" "$service_prefix")"
+  if [[ "$active" == "blue" ]]; then
+    target="green"
+  else
+    target="blue"
+  fi
+
+  service="${service_prefix}-${target}"
+  backup="$(mktemp)"
+  cp "$upstream_file" "$backup"
+  previous_line="$(cat "$backup")"
+
+  log "Deploying $kind: active=$active, target=$target"
+
+  if ! docker compose up -d --build "$service"; then
+    log "Build/start failed for $service; active upstream unchanged."
+    rm -f "$backup"
+    return 1
+  fi
+
+  log "Checking candidate $service"
+
+  if [[ "$kind" == "api" ]]; then
+    if ! docker compose exec -T nginx \
+      wget -qO- "http://${service}:3000/health" >/dev/null; then
+      log "Candidate API health check failed; active upstream unchanged."
+      rm -f "$backup"
+      return 1
+    fi
+  else
+    if ! docker compose exec -T "$service" \
+      wget -qO- http://127.0.0.1/ >/dev/null; then
+      log "Candidate frontend check failed; active upstream unchanged."
+      rm -f "$backup"
+      return 1
+    fi
+  fi
+
+  printf 'server %s;\n' \
+    "$([[ "$kind" == "api" ]] && echo "${service}:3000" || echo "${service}:80")" \
+    > "$upstream_file"
+
+  if ! docker compose exec -T "$proxy_container" nginx -t; then
+    printf '%s\n' "$previous_line" > "$upstream_file"
+    log "Nginx config invalid; restored previous upstream."
+    rm -f "$backup"
+    return 1
+  fi
+
+  if ! docker compose exec -T "$proxy_container" nginx -s reload; then
+    printf '%s\n' "$previous_line" > "$upstream_file"
+    docker compose exec -T "$proxy_container" nginx -t &&
+      docker compose exec -T "$proxy_container" nginx -s reload || true
+    log "Nginx reload failed; attempted rollback."
+    rm -f "$backup"
+    return 1
+  fi
+
+  log "Checking public endpoint: $test_url"
+
+  if ! wait_http "$test_url"; then
+    log "Public health check failed; rolling back to $active."
+
+    printf '%s\n' "$previous_line" > "$upstream_file"
+
+    if docker compose exec -T "$proxy_container" nginx -t &&
+       docker compose exec -T "$proxy_container" nginx -s reload &&
+       wait_http "$test_url" 10; then
+      log "Rollback successful; $active is active again."
+    else
+      log "CRITICAL: rollback verification failed. Inspect Nginx and upstream files."
+    fi
+
+    rm -f "$backup"
+    return 1
+  fi
+
+  rm -f "$backup"
+  log "Deployment successful: $kind is now on $target."
+}
+
+case "$MODE" in
+  api)
+    deploy_one api
+    ;;
+  web)
+    deploy_one web
+    ;;
+  all)
+    deploy_one api
+    deploy_one web
+    ;;
+esac
+
+log "Deployment command finished."
