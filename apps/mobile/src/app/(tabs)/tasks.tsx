@@ -188,6 +188,7 @@ function TimeWheel({ label, value, onChange }: TimeWheelProps) {
 export default function TasksScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState('');
+  const [quickTitle, setQuickTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('medium');
   const [dueAt, setDueAt] = useState<string | null>(null);
@@ -245,8 +246,9 @@ export default function TasksScreen() {
     loadTasks();
   }, [loadTasks]);
 
-  async function addTask() {
-    if (!title.trim()) {
+  async function addTask(titleOverride?: string) {
+    const taskTitle = (titleOverride ?? title).trim();
+    if (!taskTitle) {
       setError('Введите название задачи.');
       return;
     }
@@ -257,7 +259,7 @@ export default function TasksScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: title.trim(),
+          title: taskTitle,
           description: description.trim(),
           priority,
           dueAt: dueAt
@@ -274,6 +276,7 @@ export default function TasksScreen() {
       if (!response.ok) throw new Error();
 
       setTitle('');
+      setQuickTitle('');
       setDescription('');
       setPriority('medium');
       setDueAt(null);
@@ -321,6 +324,36 @@ export default function TasksScreen() {
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <View style={styles.quickAddCard}>
+        <Text style={styles.quickAddTitle}>Быстро добавить</Text>
+        <View style={styles.quickAddRow}>
+          <TextInput
+            value={quickTitle}
+            onChangeText={setQuickTitle}
+            placeholder="Что нужно сделать?"
+            placeholderTextColor="#9293A7"
+            style={styles.quickAddInput}
+            returnKeyType="done"
+            onSubmitEditing={() => addTask(quickTitle)}
+            accessibilityLabel="Название новой задачи"
+          />
+          <Pressable
+            style={[
+              styles.quickAddButton,
+              !quickTitle.trim() && styles.quickAddButtonDisabled,
+            ]}
+            onPress={() => addTask(quickTitle)}
+            accessibilityRole="button"
+            accessibilityLabel="Добавить задачу"
+          >
+            <Text style={styles.quickAddButtonText}>+</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.quickAddHint}>
+          Остальные параметры можно настроить в полной форме ниже.
+        </Text>
+      </View>
 
       <View style={styles.form}>
         <Text style={styles.formTitle}>Новая задача</Text>
@@ -529,7 +562,7 @@ export default function TasksScreen() {
           ))}
         </View>
 
-        <Pressable style={styles.addButton} onPress={addTask}>
+        <Pressable style={styles.addButton} onPress={() => addTask()}>
           <Text style={styles.addButtonText}>+ Добавить задачу</Text>
         </Pressable>
       </View>
@@ -882,6 +915,59 @@ wheelItem: {
     gap: 14,
     borderWidth: 1,
     borderColor: '#E6E8F0',
+  },
+  quickAddCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E6E3FA',
+    padding: 14,
+    marginBottom: 16,
+    gap: 9,
+  },
+  quickAddTitle: {
+    color: '#29283F',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  quickAddInput: {
+    flex: 1,
+    minWidth: 0,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E6E8F0',
+    backgroundColor: '#FAFAFE',
+    paddingHorizontal: 13,
+    color: '#29283F',
+    fontSize: 14,
+  },
+  quickAddButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#6B5CE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickAddButtonDisabled: {
+    backgroundColor: '#A9A1EC',
+  },
+  quickAddButtonText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '500',
+  },
+  quickAddHint: {
+    color: '#85869A',
+    fontSize: 11,
+    lineHeight: 15,
   },
   formTitle: {
     fontSize: 19,
